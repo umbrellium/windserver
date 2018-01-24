@@ -17,6 +17,7 @@
   "author": "danwild@y7mail.com",
   "license": "ISC",
   "dependencies": {
+    "bunyan": "^1.8.12",
     "cors": "^2.7.1",
     "express": "^4.13.4",
     "moment": "^2.12.0",
