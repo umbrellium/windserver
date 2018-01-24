@@ -23,7 +23,7 @@ var corsOptions = {
   }
 };
 
-app.listen(port, function (err) {
+app.listen(port, function () {
   log.info({ port: port }, "starting server");
 });
 
@@ -32,7 +32,7 @@ app.get("/", cors(corsOptions), function (req, res) {
 });
 
 app.get("/alive", cors(corsOptions), function (req, res) {
-  res.send("wind-js-server is alive");
+  res.send("ok");
 });
 
 app.get("/latest", cors(corsOptions), function (req, res) {
@@ -50,7 +50,7 @@ app.get("/latest", cors(corsOptions), function (req, res) {
     res.setHeader("Content-Type", "application/json");
     res.sendFile(fileName, {}, function (err) {
       if (err) {
-        console.log(stamp + " doesnt exist yet, trying previous interval..");
+        log.error({ err: err, stamp: stamp }, "does not exist yet, trying previous interval");
         sendLatest(moment(targetMoment).subtract(6, "hours"));
       }
     });
@@ -91,7 +91,8 @@ app.get("/nearest", cors(corsOptions), function (req, res, next) {
     res.setHeader("Content-Type", "application/json");
     res.sendFile(fileName, {}, function (err) {
       if (err) {
-        var nextTarget = searchForwards ? moment(targetMoment).add(6, "hours") : moment(targetMoment).subtract(6, "hours");
+        var nextTarget = searchForwards ? moment(targetMoment).add(6, "hours") :
+          moment(targetMoment).subtract(6, "hours");
         sendNearestTo(nextTarget);
       }
     });
@@ -110,10 +111,8 @@ app.get("/nearest", cors(corsOptions), function (req, res, next) {
  * Ping for new data every 15 mins
  *
  */
-setInterval(function () {
-
+var watchID = setInterval(function () {
   run(moment.utc());
-
 }, 900000);
 
 /**
@@ -121,7 +120,6 @@ setInterval(function () {
  * @param targetMoment {Object} moment to check for new data
  */
 function run(targetMoment) {
-
   getGribData(targetMoment).then(function (response) {
     if (response.stamp) {
       convertGribToJson(response.stamp, response.targetMoment);
@@ -143,7 +141,7 @@ function getGribData(targetMoment) {
 
     // only go 2 weeks deep
     if (moment.utc().diff(targetMoment, "days") > 30) {
-      console.log("hit limit, harvest complete or there is a big gap in data..");
+      log.info("reached limit, harvest complete or large gap in data");
       return;
     }
 
@@ -165,20 +163,16 @@ function getGribData(targetMoment) {
       }
 
     }).on("error", function (err) {
-      // console.log(err);
+      log.error({ err: err, stamp: stamp }, "unable to retrieve data");
       runQuery(moment(targetMoment).subtract(6, "hours"));
-
     }).on("response", function (response) {
-
-      console.log("response " + response.statusCode + " | " + stamp);
-
+      log.info({ status: response.statusCode, stamp: stamp });
       if (response.statusCode !== 200) {
         runQuery(moment(targetMoment).subtract(6, "hours"));
       } else {
         // don"t rewrite stamps
         if (!checkPath("json-data/" + stamp + ".json", false)) {
-
-          console.log("piping " + stamp);
+          log.debug({ stamp: stamp }, "piping data");
 
           // mk sure we"ve got somewhere to put output
           checkPath("grib-data", true);
@@ -192,7 +186,7 @@ function getGribData(targetMoment) {
           });
 
         } else {
-          console.log("already have " + stamp + ", not looking further");
+          log.info({ stamp: stamp }, "end reached, not looking further");
           deferred.resolve({ stamp: false, targetMoment: false });
         }
       }
@@ -214,12 +208,12 @@ function convertGribToJson(stamp, targetMoment) {
   exec("converter/bin/grib2json --data --output json-data/" +
     stamp + ".json --names --compact grib-data/" + stamp + ".f000",
     { maxBuffer: 500 * 1024 },
-    function (error, stdout, stderr) {
+    function (error) {
 
       if (error) {
-        console.log("exec error: " + error);
+        log.error({ err: error });
       } else {
-        console.log("converted..");
+        log.info({ stamp: stamp }, "converted file");
 
         // don"t keep raw grib data
         exec("rm grib-data/*");
@@ -229,11 +223,10 @@ function convertGribToJson(stamp, targetMoment) {
         var prevStamp = prevMoment.format("YYYYMMDD") + roundHours(prevMoment.hour(), 6);
 
         if (!checkPath("json-data/" + prevStamp + ".json", false)) {
-
-          console.log("attempting to harvest older data " + stamp);
+          log.info({ stamp: stamp }, "attempting to harvest older data");
           run(prevMoment);
         } else {
-          console.log("got older, no need to harvest further");
+          log.info({ stamp: stamp }, "got older no need to harvest further");
         }
       }
     });
@@ -266,7 +259,6 @@ function checkPath(path, mkdir) {
   try {
     fs.statSync(path);
     return true;
-
   } catch (e) {
     if (mkdir) {
       fs.mkdirSync(path);
