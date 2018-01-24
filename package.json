@@ -7,7 +7,7 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "docker build -t umbrellium/windserver .",
     "shell": "docker run -it --rm --entrypoint /bin/bash umbrellium/windserver",
-    "server": "docker run --rm umbrellium/windserver"
+    "server": "docker run --rm -p 7000:7000 umbrellium/windserver"
   },
   "keywords": [
     "wind-js",
