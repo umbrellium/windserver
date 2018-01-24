@@ -1,0 +1,29 @@
+{
+  "name": "wind-js-server",
+  "version": "0.0.1",
+  "description": "Crude rest service to expose Grib2 wind forecast data as JSON",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "docker build -t umbrellium/windserver .",
+    "shell": "docker run -it --rm --entrypoint /bin/bash umbrellium/windserver",
+    "server": "docker run --rm umbrellium/windserver"
+  },
+  "keywords": [
+    "wind-js",
+    "node",
+    "grib2"
+  ],
+  "author": "danwild@y7mail.com",
+  "license": "ISC",
+  "dependencies": {
+    "cors": "^2.7.1",
+    "express": "^4.13.4",
+    "moment": "^2.12.0",
+    "q": "^1.4.1",
+    "request": "^2.70.0"
+  },
+  "devDependencies": {
+    "eslint": "^4.16.0"
+  }
+}
