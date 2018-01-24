@@ -44,10 +44,6 @@
       2,
       "nofunc"
     ],
-    "object-curly-spacing": [
-      2,
-      "never"
-    ],
     "quotes": [
       2,
       "double",
