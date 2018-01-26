@@ -5,11 +5,11 @@
   "main": "app.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "docker build -t umbrellium/windserver .",
-    "shell": "docker run -it --rm --entrypoint /bin/bash umbrellium/windserver",
-    "server": "docker run --rm -p 7000:7000 umbrellium/windserver",
+    "build": "./scripts/docker.sh build",
+    "shell": "docker run -it --rm --entrypoint /bin/bash umbrellium/windserver:latest",
+    "server": "docker run --rm -p 7000:7000 umbrellium/windserver:latest",
     "preserver": "npm run build",
-    "push": "./scripts/push.sh"
+    "push": "./scripts/docker.sh push"
   },
   "keywords": [
     "wind-js",
