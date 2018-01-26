@@ -8,7 +8,8 @@
     "build": "docker build -t umbrellium/windserver .",
     "shell": "docker run -it --rm --entrypoint /bin/bash umbrellium/windserver",
     "server": "docker run --rm -p 7000:7000 umbrellium/windserver",
-    "preserver": "npm run build"
+    "preserver": "npm run build",
+    "push": "./scripts/push.sh"
   },
   "keywords": [
     "wind-js",
