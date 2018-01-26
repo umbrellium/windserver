@@ -1,15 +1,50 @@
-var express = require("express");
-var moment = require("moment");
-var request = require("request");
-var fs = require("fs");
-var Q = require("q");
-var cors = require("cors");
-var bunyan = require("bunyan");
+const express = require("express");
+const moment = require("moment");
+const request = require("request");
+const fs = require("fs");
+const Q = require("q");
+const cors = require("cors");
+const bunyan = require("bunyan");
+const findRemoveSync = require("find-remove");
+const prometheus = require("express-prom-bundle");
+const metrics = prometheus({ includePath: true, includeMethod: true });
 
-var app = express();
-var port = process.env.PORT || 7000;
-var baseDir = "http://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_1p00.pl";
-var log = bunyan.createLogger({ name: "windserver" });
+const app = express();
+const port = process.env.PORT || 7000;
+const baseDir = "http://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_1p00.pl";
+const logLevel = process.env.LOG_LEVEL || "info";
+
+// create our logger
+const log = bunyan.createLogger({
+  name: "windserver",
+  level: logLevel
+});
+
+const maxAge = 60 * 60 * 24 * 14; // 14 days in seconds
+
+// metrics config
+const retrieveCounter = new metrics.promClient.Counter({
+  name: "retrievals",
+  help: "counts whenever we go retrieve data"
+});
+
+const retrieveErrorCounter = new metrics.promClient.Counter({
+  name: "retrieval_errors",
+  help: "counts whenever we go retrieve data"
+});
+
+const fileRemovalCounter = new metrics.promClient.Counter({
+  name: "removals",
+  help: "counts when we remove an old file"
+});
+
+const filesGauge = new metrics.promClient.Gauge({
+  name: "data_files",
+  help: "gauge measuring number of files in data directory"
+});
+
+// add metrics middleware
+app.use(metrics);
 
 // cors config
 var whitelist = process.env.WHITELIST ?
@@ -22,19 +57,22 @@ var corsOptions = {
   }
 };
 
+app.use(cors(corsOptions));
+
 app.listen(port, function () {
   log.info({ port: port }, "starting server");
 });
 
-app.get("/", cors(corsOptions), function (req, res) {
+app.get("/", function (req, res) {
   res.send("hello wind-js-server.. go to /latest for wind data..");
 });
 
-app.get("/alive", cors(corsOptions), function (req, res) {
+app.get("/pulse", function (req, res) {
+  res.set("Content-Type", "text/plain");
   res.send("ok");
 });
 
-app.get("/latest", cors(corsOptions), function (req, res) {
+app.get("/latest", function (req, res) {
 
   /**
    * Find and return the latest available 6 hourly pre-parsed JSON data
@@ -46,11 +84,15 @@ app.get("/latest", cors(corsOptions), function (req, res) {
     var stamp = moment(targetMoment).format("YYYYMMDD") +
       roundHours(moment(targetMoment).hour(), 6);
     var fileName = __dirname + "/json-data/" + stamp + ".json";
+    log.debug({ fileName: fileName }, "attempt to send file");
 
     res.setHeader("Content-Type", "application/json");
-    res.sendFile(fileName, {}, function (err) {
+    res.sendFile(fileName, {
+      maxAge: 900000,
+      immutable: true
+    }, function (err) {
       if (err) {
-        log.error({ err: err, stamp: stamp },
+        log.debug({ err: err, stamp: stamp },
           "does not exist yet, trying previous interval");
         sendLatest(moment(targetMoment).subtract(6, "hours"));
       }
@@ -61,7 +103,7 @@ app.get("/latest", cors(corsOptions), function (req, res) {
 
 });
 
-app.get("/nearest", cors(corsOptions), function (req, res, next) {
+app.get("/nearest", function (req, res, next) {
 
   var time = req.query.timeIso;
   var limit = req.query.searchLimit;
@@ -91,7 +133,10 @@ app.get("/nearest", cors(corsOptions), function (req, res, next) {
     var fileName = __dirname + "/json-data/" + stamp + ".json";
 
     res.setHeader("Content-Type", "application/json");
-    res.sendFile(fileName, {}, function (err) {
+    res.sendFile(fileName, {
+      maxAge: 604800000,
+      immutable: true
+    }, function (err) {
       if (err) {
         var nextTarget = searchForwards ? moment(targetMoment).add(6, "hours") :
           moment(targetMoment).subtract(6, "hours");
@@ -105,7 +150,6 @@ app.get("/nearest", cors(corsOptions), function (req, res, next) {
   } else {
     return next(new Error("Invalid params, expecting: timeIso=ISO_TIME_STRING"));
   }
-
 });
 
 /**
@@ -122,10 +166,45 @@ setInterval(function () {
  * @param targetMoment {Object} moment to check for new data
  */
 function run(targetMoment) {
+  removeOldFiles();
+  countDataFiles();
+
   getGribData(targetMoment).then(function (response) {
     if (response.stamp) {
       convertGribToJson(response.stamp, response.targetMoment);
     }
+  });
+}
+
+/**
+ * Uses find-remove module to delete files older than our maxAge seconds.
+ */
+function removeOldFiles() {
+  log.debug({ maxAge: maxAge }, "removing old files");
+
+  // delete json files older than 2 weeks
+  var result = findRemoveSync("json-data/", { age: { seconds: maxAge } });
+  var files = Object.keys(result);
+
+  if (files.length > 0) {
+    fileRemovalCounter.inc(files.length);
+    log.debug({ numFiles: files.length, age: maxAge }, "deleting old files");
+  }
+}
+
+/**
+ * Instrumentation that counts the number of data files currently in the
+ * json-data directory, and sets a gauge accordingly.
+ */
+function countDataFiles() {
+  log.debug("counting current data files");
+
+  fs.readdir("./json-data", (err, files) => {
+    if (err) {
+      log.error(err);
+    };
+
+    filesGauge.set(files.length);
   });
 }
 
@@ -163,11 +242,12 @@ function getGribData(targetMoment) {
         bottomlat: -90,
         dir: "/gfs." + stamp
       }
-
     }).on("error", function (err) {
+      retrieveErrorCounter.inc();
       log.error({ err: err, stamp: stamp }, "unable to retrieve data");
       runQuery(moment(targetMoment).subtract(6, "hours"));
     }).on("response", function (response) {
+      retrieveCounter.inc();
       log.debug({ status: response.statusCode, stamp: stamp }, "data retrieved");
       if (response.statusCode !== 200) {
         runQuery(moment(targetMoment).subtract(6, "hours"));
@@ -186,7 +266,6 @@ function getGribData(targetMoment) {
             file.close();
             deferred.resolve({ stamp: stamp, targetMoment: targetMoment });
           });
-
         } else {
           log.debug({ stamp: stamp }, "end reached, not looking further");
           deferred.resolve({ stamp: false, targetMoment: false });
@@ -201,7 +280,6 @@ function getGribData(targetMoment) {
 }
 
 function convertGribToJson(stamp, targetMoment) {
-
   // mk sure we"ve got somewhere to put output
   checkPath("json-data", true);
 
@@ -225,10 +303,10 @@ function convertGribToJson(stamp, targetMoment) {
         var prevStamp = prevMoment.format("YYYYMMDD") + roundHours(prevMoment.hour(), 6);
 
         if (!checkPath("json-data/" + prevStamp + ".json", false)) {
-          log.info({ stamp: stamp }, "fetching older data");
+          log.debug({ stamp: stamp }, "fetching data");
           run(prevMoment);
         } else {
-          log.info({ stamp: stamp }, "no need to harvest further");
+          log.debug({ stamp: stamp }, "end of harvest");
         }
       }
     });
