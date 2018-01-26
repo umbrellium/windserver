@@ -7,7 +7,8 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "docker build -t umbrellium/windserver .",
     "shell": "docker run -it --rm --entrypoint /bin/bash umbrellium/windserver",
-    "server": "docker run --rm -p 7000:7000 umbrellium/windserver"
+    "server": "docker run --rm -p 7000:7000 umbrellium/windserver",
+    "preserver": "npm run build"
   },
   "keywords": [
     "wind-js",
@@ -20,8 +21,10 @@
     "bunyan": "^1.8.12",
     "cors": "^2.7.1",
     "express": "^4.13.4",
+    "express-prom-bundle": "^3.3.0",
     "find-remove": "^1.2.0",
     "moment": "^2.12.0",
+    "prom-client": "^10.2.2",
     "q": "^1.4.1",
     "request": "^2.70.0"
   },
