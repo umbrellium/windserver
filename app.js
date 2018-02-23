@@ -52,15 +52,19 @@ var whitelist = process.env.WHITELIST ?
 
 var corsOptions = {
   origin: function (origin, callback) {
-    var originIsWhitelisted = whitelist.indexOf(origin) !== -1;
-    callback(null, originIsWhitelisted);
+    if (whitelist.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Forbidden by CORS'));
+    }
   }
 };
 
-app.use(cors(corsOptions));
+//app.use(cors(corsOptions));
+app.use(cors());
 
 app.listen(port, function () {
-  log.info({ port: port }, "starting server");
+  log.info({ port: port, corsWhitelist: whitelist }, "starting server");
 });
 
 app.get("/", function (req, res) {
