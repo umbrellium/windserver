@@ -7,7 +7,7 @@ const cors = require("cors");
 const bunyan = require("bunyan");
 const findRemoveSync = require("find-remove");
 const prometheus = require("express-prom-bundle");
-const metrics = prometheus({ includePath: true, includeMethod: true });
+const metrics = prometheus({ includePath: true, includeMethod: true, promClient: { collectDefaultMetrics: {} } });
 
 const app = express();
 const port = process.env.PORT || 7000;
@@ -24,22 +24,22 @@ const maxAge = 60 * 60 * 24 * 14; // 14 days in seconds
 
 // metrics config
 const retrieveCounter = new metrics.promClient.Counter({
-  name: "retrievals",
+  name: "windserver_retrievals",
   help: "counts whenever we go retrieve data"
 });
 
 const retrieveErrorCounter = new metrics.promClient.Counter({
-  name: "retrieval_errors",
+  name: "windserver_retrieval_errors",
   help: "counts whenever we go retrieve data"
 });
 
 const fileRemovalCounter = new metrics.promClient.Counter({
-  name: "removals",
+  name: "windserver_removals",
   help: "counts when we remove an old file"
 });
 
 const filesGauge = new metrics.promClient.Gauge({
-  name: "data_files",
+  name: "windserver_data_files",
   help: "gauge measuring number of files in data directory"
 });
 
