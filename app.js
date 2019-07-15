@@ -11,7 +11,7 @@ const metrics = prometheus({ includePath: true, includeMethod: true, promClient:
 
 const app = express();
 const port = process.env.PORT || 7000;
-const baseDir = "http://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_1p00.pl";
+const baseDir = "https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_1p00.pl";
 const logLevel = process.env.LOG_LEVEL || "info";
 
 // create our logger
@@ -76,7 +76,7 @@ app.get("/pulse", function (req, res) {
   res.send("ok");
 });
 
-app.get("/latest", function (req, res) {
+app.get("/latest", function (req, res, next) {
 
   /**
    * Find and return the latest available 6 hourly pre-parsed JSON data
@@ -96,9 +96,13 @@ app.get("/latest", function (req, res) {
       immutable: true
     }, function (err) {
       if (err) {
-        log.debug({ err: err, stamp: stamp },
-          "does not exist yet, trying previous interval");
-        sendLatest(moment(targetMoment).subtract(6, "hours"));
+        if (targetMoment.isBefore(moment().subtract(30, "days"))) {
+          next(err);
+        } else {
+          log.debug({ err: err, stamp: stamp },
+            "does not exist yet, trying previous interval");
+          sendLatest(moment(targetMoment).subtract(6, "hours"));
+        }
       }
     });
   }
@@ -230,11 +234,14 @@ function getGribData(targetMoment) {
       return;
     }
 
-    var stamp = moment(targetMoment).format("YYYYMMDD") + roundHours(moment(targetMoment).hour(), 6);
+    var localDir = moment(targetMoment).format("YYYYMMDD") + roundHours(moment(targetMoment).hour(), 6);
+    var requestDir = moment(targetMoment).format("YYYYMMDD") + "/" + roundHours(moment(targetMoment).hour(), 6);
+    var filePath = "gfs.t" + roundHours(moment(targetMoment).hour(), 6) + "z.pgrb2.1p00.f000";
+
     request.get({
       url: baseDir,
       qs: {
-        file: "gfs.t" + roundHours(moment(targetMoment).hour(), 6) + "z.pgrb2.1p00.f000",
+        file: filePath,
         lev_10_m_above_ground: "on",
         lev_surface: "on",
         var_TMP: "on",
@@ -244,34 +251,35 @@ function getGribData(targetMoment) {
         rightlon: 360,
         toplat: 90,
         bottomlat: -90,
-        dir: "/gfs." + stamp
+        dir: "/gfs." + requestDir
       }
     }).on("error", function (err) {
       retrieveErrorCounter.inc();
-      log.error({ err: err, stamp: stamp }, "unable to retrieve data");
+      log.error({ err: err, stamp: localDir }, "unable to retrieve data");
       runQuery(moment(targetMoment).subtract(6, "hours"));
     }).on("response", function (response) {
-      retrieveCounter.inc();
-      log.debug({ status: response.statusCode, stamp: stamp }, "data retrieved");
+      log.debug({ status: response.statusCode, stamp: localDir }, "data retrieved");
       if (response.statusCode !== 200) {
+        retrieveErrorCounter.inc();
         runQuery(moment(targetMoment).subtract(6, "hours"));
       } else {
+        retrieveCounter.inc();
         // don"t rewrite stamps
-        if (!checkPath("json-data/" + stamp + ".json", false)) {
-          log.debug({ stamp: stamp }, "piping data");
+        if (!checkPath("json-data/" + localDir + ".json", false)) {
+          log.debug({ stamp: localDir }, "piping data");
 
           // mk sure we"ve got somewhere to put output
           checkPath("grib-data", true);
 
           // pipe the file, resolve the valid time stamp
-          var file = fs.createWriteStream("grib-data/" + stamp + ".f000");
+          var file = fs.createWriteStream("grib-data/" + localDir + ".f000");
           response.pipe(file);
           file.on("finish", function () {
             file.close();
-            deferred.resolve({ stamp: stamp, targetMoment: targetMoment });
+            deferred.resolve({ stamp: localDir, targetMoment: targetMoment });
           });
         } else {
-          log.debug({ stamp: stamp }, "end reached, not looking further");
+          log.debug({ stamp: localDir }, "end reached, not looking further");
           deferred.resolve({ stamp: false, targetMoment: false });
         }
       }
