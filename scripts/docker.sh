@@ -20,7 +20,7 @@ build() {
   echo "Building image"
   $DO docker build -t "$IMG" .
   $DO docker tag "$IMG" "$LATEST"
-  $DO docker tag "$IMG" "$HEROKU_NAME"
+  # $DO docker tag "$IMG" "$HEROKU_NAME"
 }
 
 push() {
@@ -29,7 +29,7 @@ push() {
   echo "Pushing image"
   $DO docker push "$IMG"
   $DO docker push "$LATEST"
-  $DO docker push "$HEROKU_NAME"
+  # $DO docker push "$HEROKU_NAME"
 }
 
 # allow passing in function name as a trailing parameter to the script call

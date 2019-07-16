@@ -72,8 +72,26 @@ app.get("/", function (req, res) {
 });
 
 app.get("/pulse", function (req, res) {
-  res.set("Content-Type", "text/plain");
-  res.send("ok");
+  function findRecent(targetMoment) {
+    var stamp = moment(targetMoment).format("YYYYMMDD") +
+      roundHours(moment(targetMoment).hour(), 6);
+    var fileName = __dirname + "/json-data/" + stamp + ".json";
+
+    res.set("Content-Type", "text/plain");
+
+    if (checkPath(fileName, false)) {
+      res.send("ok");
+    } else {
+      if (targetMoment.isBefore(moment().subtract(30, "days"))) {
+        res.status(500);
+        res.send("no data");
+      } else {
+        findRecent(moment(targetMoment).subtract(6, "hours"));
+      }
+    }
+  }
+
+  findRecent(moment().utc());
 });
 
 app.get("/latest", function (req, res, next) {
